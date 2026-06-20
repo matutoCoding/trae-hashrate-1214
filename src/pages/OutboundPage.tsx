@@ -61,6 +61,8 @@ export default function OutboundPage() {
     if (isUrgent) {
       if (currentCalling?.urgentQuotaUsed) {
         urgentCost = { cost: 0, withinQuota: true, urgentFee: 0, reason: '加急配额已扣减，无需额外收费' };
+      } else if (currentCalling?.urgentFeeCharged && currentCalling?.urgentFeeAmount !== undefined && currentCalling?.urgentFeeAmount > 0) {
+        urgentCost = { cost: currentCalling.urgentFeeAmount, withinQuota: false, urgentFee: currentCalling.urgentFeeAmount, reason: `加急配额不足，收取加急费 ¥${currentCalling.urgentFeeAmount}` };
       } else if (currentCalling?.urgentFeeCharged) {
         urgentCost = { cost: riderPackage.urgentFee, withinQuota: false, urgentFee: riderPackage.urgentFee, reason: `加急配额不足，收取加急费 ¥${riderPackage.urgentFee}` };
       } else {

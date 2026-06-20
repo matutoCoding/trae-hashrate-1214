@@ -390,7 +390,7 @@ export default function TicketPage() {
               <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
                 {riderUrgentRemaining !== null && riderUrgentRemaining > 0
                   ? `扣减1次加急配额（剩余${riderUrgentRemaining}次）`
-                  : `+¥${formData.selectedPackage?.urgentFee || 15} 加急费（无配额）`}
+                  : `+¥${formData.selectedPackage?.urgentFee} 加急费（无配额）`}
               </span>
               {riderUrgentRemaining !== null ? (
                 <span className="text-xs text-slate-500">
@@ -491,7 +491,7 @@ export default function TicketPage() {
                 <p className="text-xs text-red-500 mt-2">
                   {riderUrgentRemaining !== null && riderUrgentRemaining > 0
                     ? `本次加急将扣减1次加急配额（剩余${riderUrgentRemaining}次），不收取加急费`
-                    : `骑手加急配额已用完，本次加急将收取加急费 ¥${formData.selectedPackage?.urgentFee || 15}`}
+                    : `骑手加急配额已用完，本次加急将收取加急费 ¥${formData.selectedPackage?.urgentFee ?? 0}`}
                 </p>
               </div>
             )}

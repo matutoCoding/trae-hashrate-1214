@@ -230,6 +230,9 @@ export const mockQueueTickets: QueueTicket[] = [
     status: 'waiting',
     createdAt: now.subtract(3, 'minute').format('YYYY-MM-DD HH:mm:ss'),
     packageName: '标准套餐',
+    urgentQuotaUsed: false,
+    urgentFeeCharged: true,
+    urgentFeeAmount: 15,
   },
   {
     ticketId: 'Q0621004',

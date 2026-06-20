@@ -78,6 +78,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             const result = userStore.getState().consumeUrgentQuota(rider.riderId);
             if (result.usedQuota) {
               urgentQuotaUsed = true;
+              urgentFeeAmount = 0;
               urgentRemark = '（已扣加急配额1次）';
             } else {
               urgentFeeCharged = true;
@@ -241,6 +242,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             const result = userStore.getState().consumeUrgentQuota(ticket.riderId);
             if (result.usedQuota) {
               urgentQuotaUsed = true;
+              urgentFeeAmount = 0;
               urgentRemark = '，已扣加急配额1次';
             } else {
               urgentFeeCharged = true;
@@ -299,6 +301,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             const result = userStore.getState().consumeUrgentQuota(ticket.riderId);
             if (result.usedQuota) {
               urgentQuotaUsed = true;
+              urgentFeeAmount = 0;
               remarkSuffix = '，已扣加急配额1次';
             } else {
               urgentFeeCharged = true;
