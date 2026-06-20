@@ -16,6 +16,8 @@ import {
   Zap,
   Crown,
   CircleCheck,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePriorityQueue } from '@/hooks/usePriorityQueue';
 import { useUserStore } from '@/store/userStore';
@@ -593,6 +595,47 @@ export default function TicketPage() {
             <div className="text-xs text-slate-500 mt-1">预计等待</div>
           </motion.div>
         </div>
+
+        {createdTicket?.queueType === 'URGENT' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.55 }}
+            className={`rounded-2xl p-4 shadow-sm border ${
+              createdTicket.urgentQuotaUsed
+                ? 'bg-emerald-50 border-emerald-100'
+                : 'bg-red-50 border-red-100'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                createdTicket.urgentQuotaUsed ? 'bg-emerald-100' : 'bg-red-100'
+              }`}>
+                {createdTicket.urgentQuotaUsed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className={`font-semibold text-sm ${
+                  createdTicket.urgentQuotaUsed ? 'text-emerald-700' : 'text-red-700'
+                }`}>
+                  {createdTicket.urgentQuotaUsed
+                    ? '加急配额抵扣'
+                    : '加急服务收费'}
+                </div>
+                <div className={`text-xs mt-0.5 ${
+                  createdTicket.urgentQuotaUsed ? 'text-emerald-600' : 'text-red-600'
+                }`}>
+                  {createdTicket.urgentQuotaUsed
+                    ? `已使用加急配额 1 次，无需支付加急费`
+                    : `加急费 ¥${createdTicket.urgentFeeAmount || 0}，换电时一并结算`}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

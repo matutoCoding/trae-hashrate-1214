@@ -47,6 +47,7 @@ export interface QueueTicket {
   windowNo?: number;
   urgentQuotaUsed?: boolean;
   urgentFeeCharged?: boolean;
+  urgentFeeAmount?: number;
 }
 
 export interface PricingPackage {

@@ -161,6 +161,15 @@ function TicketCard({
               {ticket.queueType === 'VIP' && <Crown className="w-3 h-3 mr-1" />}
               {getQueueTypeLabel(ticket.queueType)}
             </span>
+            {ticket.queueType === 'URGENT' && (
+              <span className={`inline-flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded-full ${
+                ticket.urgentQuotaUsed
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}>
+                {ticket.urgentQuotaUsed ? '配额抵扣' : '待收加急费'}
+              </span>
+            )}
             {isCalling && (
               <span className="badge bg-orange-100 text-orange-700 border border-orange-200 animate-pulse">
                 <Megaphone className="w-3 h-3 mr-1" />

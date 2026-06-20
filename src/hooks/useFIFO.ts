@@ -79,7 +79,6 @@ export const useFIFO = () => {
     let urgentQuotaUsed = false;
     let urgentFeeCharged = false;
     let urgentFee = 0;
-    let urgentReason = '';
 
     if (isUrgent && ticketId) {
       const ticket = useQueueStore.getState().tickets.find(
@@ -88,21 +87,14 @@ export const useFIFO = () => {
       urgentQuotaUsed = ticket?.urgentQuotaUsed || false;
       urgentFeeCharged = ticket?.urgentFeeCharged || false;
 
-      if (urgentQuotaUsed) {
-        urgentFee = 0;
-        urgentReason = '加急配额已扣减，无需额外收费';
+      if (ticket && ticket.urgentFeeAmount !== undefined && ticket.urgentFeeAmount > 0) {
+        urgentFee = ticket.urgentFeeAmount;
       } else if (urgentFeeCharged) {
         urgentFee = pkg.urgentFee;
-        urgentReason = `加急配额不足，收取加急费 ¥${pkg.urgentFee}`;
-      } else {
-        urgentFee = pkg.urgentFee;
-        urgentFeeCharged = true;
-        urgentReason = `加急配额未提前扣减，收取加急费 ¥${pkg.urgentFee}`;
       }
     } else if (isUrgent) {
       urgentFee = pkg.urgentFee;
       urgentFeeCharged = true;
-      urgentReason = `加急服务，收取加急费 ¥${pkg.urgentFee}`;
     }
 
     const totalAmount = swapCost.cost + urgentFee;
