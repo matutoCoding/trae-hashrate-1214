@@ -4,7 +4,8 @@ import { usePriorityQueue } from '@/hooks/usePriorityQueue';
 import { useUserStore } from '@/store/userStore';
 import { formatDate, formatDateTime } from '@/utils/dateUtils';
 import {
-  calculateTotalCost,
+  calculateSwapCost,
+  calculateUrgentCost,
   formatCurrency,
 } from '@/utils/pricingUtils';
 import type { BatteryBatch } from '@/types';
@@ -55,8 +56,26 @@ export default function OutboundPage() {
 
   const pricingInfo = useMemo(() => {
     if (!currentRider || !riderPackage) return null;
-    return calculateTotalCost(currentRider, riderPackage, outboundQty, isUrgent);
-  }, [currentRider, riderPackage, outboundQty, isUrgent]);
+    const swapCost = calculateSwapCost(currentRider, riderPackage, outboundQty);
+    let urgentCost = null;
+    if (isUrgent) {
+      if (currentCalling?.urgentQuotaUsed) {
+        urgentCost = { cost: 0, withinQuota: true, urgentFee: 0, reason: '加急配额已扣减，无需额外收费' };
+      } else if (currentCalling?.urgentFeeCharged) {
+        urgentCost = { cost: riderPackage.urgentFee, withinQuota: false, urgentFee: riderPackage.urgentFee, reason: `加急配额不足，收取加急费 ¥${riderPackage.urgentFee}` };
+      } else {
+        urgentCost = calculateUrgentCost(currentRider, riderPackage);
+      }
+    }
+    const total = swapCost.cost + (urgentCost?.cost || 0);
+    return {
+      swapCost,
+      urgentCost,
+      total,
+      totalFreeSwap: swapCost.freeCount,
+      totalPaidSwap: swapCost.paidCount,
+    };
+  }, [currentRider, riderPackage, outboundQty, isUrgent, currentCalling]);
 
   const getBatchBorderClass = (batch: BatteryBatch) => {
     if (batch.remainingDays <= 30) return 'border-red-400 border-2';
@@ -116,6 +135,7 @@ export default function OutboundPage() {
       quantity: outboundQty,
       isUrgent,
       selectedBatchId: selectedBatch.batchId,
+      ticketId: currentCalling.ticketId,
     });
 
     if (result.success) {
@@ -124,11 +144,11 @@ export default function OutboundPage() {
         `换电 ${outboundQty} 块：免费 ${result.freeSwapUsed || 0} 块 + 超额 ${result.paidSwapUsed || 0} 块`
       );
       if (isUrgent) {
-        parts.push(
-          result.urgentQuotaUsed
-            ? '加急：扣减 1 次加急配额'
-            : `加急：加急费 ¥${result.urgentFee || 0}`
-        );
+        if (result.urgentQuotaUsed) {
+          parts.push('加急：已扣减加急配额1次');
+        } else if (result.urgentFeeCharged) {
+          parts.push(`加急：收取加急费 ¥${result.urgentFee || 0}`);
+        }
       }
       setMessage({ type: 'success', text: parts.join(' ｜ ') });
       processComplete(currentCalling.ticketId);

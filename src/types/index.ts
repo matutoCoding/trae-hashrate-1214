@@ -45,6 +45,8 @@ export interface QueueTicket {
   packageName: string;
   estimatedTime?: number;
   windowNo?: number;
+  urgentQuotaUsed?: boolean;
+  urgentFeeCharged?: boolean;
 }
 
 export interface PricingPackage {

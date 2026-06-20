@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import type { BatteryBatch } from '@/types';
 import { useBatteryStore } from '@/store/batteryStore';
 import { useUserStore } from '@/store/userStore';
-import { calculateTotalCost } from '@/utils/pricingUtils';
+import { useQueueStore } from '@/store/queueStore';
+import { calculateSwapCost, formatCurrency } from '@/utils/pricingUtils';
 
 export interface OutboundResult {
   success: boolean;
@@ -17,12 +18,13 @@ export interface OutboundResult {
   freeSwapUsed?: number;
   paidSwapUsed?: number;
   urgentQuotaUsed?: boolean;
+  urgentFeeCharged?: boolean;
 }
 
 export const useFIFO = () => {
   const { getFIFOBatches, getRecommendedBatch, processFIFOSwap, orders } =
     useBatteryStore();
-  const { getRiderById, getPackageById, consumeSwapQuota, consumeUrgentQuota } =
+  const { getRiderById, getPackageById, consumeSwapQuota } =
     useUserStore();
 
   const fifoBatches = useMemo(() => getFIFOBatches(), [getFIFOBatches]);
@@ -47,8 +49,9 @@ export const useFIFO = () => {
     quantity: number;
     isUrgent: boolean;
     selectedBatchId?: string;
+    ticketId?: string;
   }): OutboundResult => {
-    const { riderId, riderName, quantity, isUrgent, selectedBatchId } = params;
+    const { riderId, riderName, quantity, isUrgent, selectedBatchId, ticketId } = params;
 
     if (quantity <= 0) {
       return { success: false, message: '出库数量必须大于 0' };
@@ -71,16 +74,47 @@ export const useFIFO = () => {
       return { success: false, message: '骑手套餐信息不存在' };
     }
 
-    const pricing = calculateTotalCost(rider, pkg, quantity, isUrgent);
+    const swapCost = calculateSwapCost(rider, pkg, quantity);
+
+    let urgentQuotaUsed = false;
+    let urgentFeeCharged = false;
+    let urgentFee = 0;
+    let urgentReason = '';
+
+    if (isUrgent && ticketId) {
+      const ticket = useQueueStore.getState().tickets.find(
+        (t) => t.ticketId === ticketId
+      );
+      urgentQuotaUsed = ticket?.urgentQuotaUsed || false;
+      urgentFeeCharged = ticket?.urgentFeeCharged || false;
+
+      if (urgentQuotaUsed) {
+        urgentFee = 0;
+        urgentReason = '加急配额已扣减，无需额外收费';
+      } else if (urgentFeeCharged) {
+        urgentFee = pkg.urgentFee;
+        urgentReason = `加急配额不足，收取加急费 ¥${pkg.urgentFee}`;
+      } else {
+        urgentFee = pkg.urgentFee;
+        urgentFeeCharged = true;
+        urgentReason = `加急配额未提前扣减，收取加急费 ¥${pkg.urgentFee}`;
+      }
+    } else if (isUrgent) {
+      urgentFee = pkg.urgentFee;
+      urgentFeeCharged = true;
+      urgentReason = `加急服务，收取加急费 ¥${pkg.urgentFee}`;
+    }
+
+    const totalAmount = swapCost.cost + urgentFee;
 
     const result = processFIFOSwap({
       riderId,
       riderName,
       packageId: rider.packageId,
       quantity,
-      swapFee: pricing.swapCost.cost,
-      urgentFee: pricing.urgentCost?.cost || 0,
-      amount: pricing.total,
+      swapFee: swapCost.cost,
+      urgentFee,
+      amount: totalAmount,
       isUrgent,
       enforceFIFO: true,
       requestedBatchId: selectedBatchId,
@@ -95,11 +129,6 @@ export const useFIFO = () => {
     }
 
     consumeSwapQuota(riderId, quantity);
-    let urgentQuotaUsed = false;
-    if (isUrgent) {
-      const urgentResult = consumeUrgentQuota(riderId);
-      urgentQuotaUsed = urgentResult.usedQuota;
-    }
 
     return {
       success: true,
@@ -107,12 +136,13 @@ export const useFIFO = () => {
       orderId: result.order?.orderId,
       batchId: result.batch?.batchId,
       quantity,
-      amount: pricing.total,
-      swapFee: pricing.swapCost.cost,
-      urgentFee: pricing.urgentCost?.cost || 0,
-      freeSwapUsed: pricing.totalFreeSwap,
-      paidSwapUsed: pricing.totalPaidSwap,
+      amount: totalAmount,
+      swapFee: swapCost.cost,
+      urgentFee,
+      freeSwapUsed: swapCost.freeCount,
+      paidSwapUsed: swapCost.paidCount,
       urgentQuotaUsed,
+      urgentFeeCharged,
     };
   };
 

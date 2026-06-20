@@ -61,6 +61,32 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   createTicket: (rider, queueType, packageName) => {
     const { counter, addLog } = get();
     const newCounter = counter + 1;
+
+    let urgentQuotaUsed = false;
+    let urgentFeeCharged = false;
+    let urgentRemark = '';
+
+    if (queueType === 'URGENT' && rider.riderId) {
+      try {
+        const userStore = require('@/store/userStore').useUserStore;
+        const riderData = userStore.getState().getRiderById(rider.riderId);
+        if (riderData && riderData.urgentCount > 0) {
+          const result = userStore.getState().consumeUrgentQuota(rider.riderId);
+          urgentQuotaUsed = result.usedQuota;
+          urgentRemark = '（扣减加急配额1次）';
+        } else {
+          urgentFeeCharged = true;
+          const pkg = riderData
+            ? userStore.getState().getPackageById(riderData.packageId)
+            : null;
+          urgentRemark = `（无加急配额，收取加急费 ¥${pkg?.urgentFee || 15}）`;
+        }
+      } catch (e) {
+        urgentFeeCharged = true;
+        urgentRemark = '（加急配额扣减异常，按收费处理）';
+      }
+    }
+
     const newTicket: QueueTicket = {
       ticketId: generateTicketId(),
       riderId: rider.riderId || `R${String(newCounter).padStart(3, '0')}`,
@@ -71,18 +97,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       status: 'waiting',
       createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       packageName,
+      urgentQuotaUsed,
+      urgentFeeCharged,
     };
-
-    let urgentRemark = '';
-    if (queueType === 'URGENT' && rider.riderId) {
-      try {
-        const userStore = require('@/store/userStore').useUserStore;
-        const result = userStore.getState().consumeUrgentQuota(rider.riderId);
-        urgentRemark = result.usedQuota ? '（已扣加急配额）' : '（无加急配额，将收取加急费）';
-      } catch (e) {
-        // ignore
-      }
-    }
 
     set((state) => ({
       tickets: insertTicketWithPriority(state.tickets, newTicket),
@@ -195,23 +212,43 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     const ticket = get().tickets.find((t) => t.ticketId === ticketId);
     if (!ticket || ticket.status !== 'waiting') return false;
 
+    let urgentQuotaUsed = ticket.urgentQuotaUsed || false;
+    let urgentFeeCharged = ticket.urgentFeeCharged || false;
+    let urgentRemark = '';
+
     if (ticket.queueType !== 'URGENT') {
       try {
         const userStore = require('@/store/userStore').useUserStore;
-        userStore.getState().consumeUrgentQuota(ticket.riderId);
+        const riderData = userStore.getState().getRiderById(ticket.riderId);
+        if (riderData && riderData.urgentCount > 0) {
+          const result = userStore.getState().consumeUrgentQuota(ticket.riderId);
+          urgentQuotaUsed = result.usedQuota;
+          urgentRemark = '，扣减加急配额1次';
+        } else {
+          urgentFeeCharged = true;
+          const pkg = riderData
+            ? userStore.getState().getPackageById(riderData.packageId)
+            : null;
+          urgentRemark = `，无加急配额，收取加急费 ¥${pkg?.urgentFee || 15}`;
+        }
       } catch (e) {
-        // ignore
+        urgentFeeCharged = true;
+        urgentRemark = '，加急配额扣减异常，按收费处理';
       }
     }
 
     set((state) => ({
-      tickets: jumpTicketToFront(state.tickets, ticketId, 'URGENT'),
+      tickets: jumpTicketToFront(state.tickets, ticketId, 'URGENT').map((t) =>
+        t.ticketId === ticketId
+          ? { ...t, queueType: 'URGENT', priority: 1, urgentQuotaUsed, urgentFeeCharged }
+          : t
+      ),
     }));
     addLog({
       ticketId,
       action: 'jump',
       operator,
-      remark: '加急插队处理，已扣减加急配额',
+      remark: `加急插队处理${urgentRemark}`,
     });
     return true;
   },
@@ -219,21 +256,43 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   changePriority: (ticketId, newType, operator = '管理员') => {
     const { addLog, tickets } = get();
     const ticket = tickets.find((t) => t.ticketId === ticketId);
+
+    let urgentQuotaUsed = ticket?.urgentQuotaUsed || false;
+    let urgentFeeCharged = ticket?.urgentFeeCharged || false;
+    let remarkSuffix = '';
+
     if (ticket && newType === 'URGENT' && ticket.queueType !== 'URGENT') {
       try {
         const userStore = require('@/store/userStore').useUserStore;
-        userStore.getState().consumeUrgentQuota(ticket.riderId);
+        const riderData = userStore.getState().getRiderById(ticket.riderId);
+        if (riderData && riderData.urgentCount > 0) {
+          const result = userStore.getState().consumeUrgentQuota(ticket.riderId);
+          urgentQuotaUsed = result.usedQuota;
+          remarkSuffix = '，扣减加急配额1次';
+        } else {
+          urgentFeeCharged = true;
+          const pkg = riderData
+            ? userStore.getState().getPackageById(riderData.packageId)
+            : null;
+          remarkSuffix = `，无加急配额，收取加急费 ¥${pkg?.urgentFee || 15}`;
+        }
       } catch (e) {
-        // ignore
+        urgentFeeCharged = true;
+        remarkSuffix = '，加急配额扣减异常，按收费处理';
       }
     }
-    const updated = jumpTicketToFront(tickets, ticketId, newType);
+
+    const updated = jumpTicketToFront(tickets, ticketId, newType).map((t) =>
+      t.ticketId === ticketId
+        ? { ...t, urgentQuotaUsed, urgentFeeCharged }
+        : t
+    );
     set({ tickets: updated });
     addLog({
       ticketId,
       action: 'priority_change',
       operator,
-      remark: `优先级变更为：${newType === 'URGENT' ? '加急（扣加急配额）' : newType === 'VIP' ? 'VIP' : '普通'}`,
+      remark: `优先级变更为：${newType === 'URGENT' ? '加急' : newType === 'VIP' ? 'VIP' : '普通'}${remarkSuffix}`,
     });
   },
 

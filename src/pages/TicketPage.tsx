@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
@@ -55,6 +55,16 @@ export default function TicketPage() {
   } | null>(null);
 
   const isVIPPackage = formData.selectedPackage?.packageId === 'PKG003';
+
+  const currentRiderData = useMemo(() => {
+    if (!formData.riderId.trim()) return null;
+    return getRiderById(formData.riderId.trim()) || null;
+  }, [formData.riderId, getRiderById]);
+
+  const riderUrgentRemaining = useMemo(() => {
+    if (!currentRiderData || !formData.selectedPackage) return null;
+    return currentRiderData.urgentCount;
+  }, [currentRiderData, formData.selectedPackage]);
 
   const handleRiderIdBlur = () => {
     if (formData.riderId.trim()) {
@@ -376,11 +386,17 @@ export default function TicketPage() {
             </p>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
-                +¥{formData.selectedPackage?.urgentFee || 15} 加急费
+                {riderUrgentRemaining !== null && riderUrgentRemaining > 0
+                  ? `扣减1次加急配额（剩余${riderUrgentRemaining}次）`
+                  : `+¥${formData.selectedPackage?.urgentFee || 15} 加急费（无配额）`}
               </span>
-              {formData.selectedPackage && (
+              {riderUrgentRemaining !== null ? (
+                <span className="text-xs text-slate-500">
+                  骑手当前剩余加急次数: {riderUrgentRemaining}次 / 套餐总额: {formData.selectedPackage?.urgentQuota}次
+                </span>
+              ) : (
                 <span className="text-xs text-slate-400">
-                  套餐剩余加急次数: {formData.selectedPackage.urgentQuota}次
+                  套餐加急额度: {formData.selectedPackage?.urgentQuota}次（输入骑手ID可查看实际剩余）
                 </span>
               )}
             </div>
@@ -394,7 +410,9 @@ export default function TicketPage() {
     if (!formData.selectedPackage) return 0;
     let cost = formData.selectedPackage.perSwapFee;
     if (formData.queueType === 'URGENT') {
-      cost += formData.selectedPackage.urgentFee;
+      if (riderUrgentRemaining === null || riderUrgentRemaining <= 0) {
+        cost += formData.selectedPackage.urgentFee;
+      }
     }
     return cost;
   };
@@ -469,8 +487,9 @@ export default function TicketPage() {
                   </span>
                 </div>
                 <p className="text-xs text-red-500 mt-2">
-                  本次加急将扣除套餐加急次数1次，并收取加急费 ¥
-                  {formData.selectedPackage?.urgentFee}
+                  {riderUrgentRemaining !== null && riderUrgentRemaining > 0
+                    ? `本次加急将扣减1次加急配额（剩余${riderUrgentRemaining}次），不收取加急费`
+                    : `骑手加急配额已用完，本次加急将收取加急费 ¥${formData.selectedPackage?.urgentFee || 15}`}
                 </p>
               </div>
             )}
@@ -487,7 +506,9 @@ export default function TicketPage() {
               <div className="text-xs text-slate-400 mt-1 text-right">
                 换电费 ¥{formData.selectedPackage?.perSwapFee || 0}
                 {formData.queueType === 'URGENT' &&
-                  ` + 加急费 ¥${formData.selectedPackage?.urgentFee || 0}`}
+                  (riderUrgentRemaining !== null && riderUrgentRemaining > 0
+                    ? ' + 加急配额扣减（不收费）'
+                    : ` + 加急费 ¥${formData.selectedPackage?.urgentFee || 0}`)}
               </div>
             </div>
           </div>
