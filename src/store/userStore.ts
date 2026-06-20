@@ -25,6 +25,8 @@ interface UserStore {
   updateRider: (riderId: string, data: Partial<Rider>) => void;
   addPackage: (pkg: Partial<PricingPackage>) => PricingPackage;
   updatePackage: (packageId: string, data: Partial<PricingPackage>) => void;
+  consumeSwapQuota: (riderId: string, count: number) => { freeUsed: number; paidUsed: number };
+  consumeUrgentQuota: (riderId: string) => { usedQuota: boolean };
   getRidersByLevel: () => { vip: number; normal: number };
   getPackageRevenue: () => { name: string; value: number }[];
 }
@@ -110,6 +112,30 @@ export const useUserStore = create<UserStore>((set, get) => ({
         p.packageId === packageId ? { ...p, ...data } : p
       ),
     }));
+  },
+
+  consumeSwapQuota: (riderId, count) => {
+    const { getRiderById, getPackageById, updateRider } = get();
+    const rider = getRiderById(riderId);
+    if (!rider) return { freeUsed: 0, paidUsed: count };
+    const pkg = getPackageById(rider.packageId);
+    if (!pkg) {
+      updateRider(riderId, { swapUsed: rider.swapUsed + count });
+      return { freeUsed: 0, paidUsed: count };
+    }
+    const remainingFree = Math.max(0, pkg.swapCount - rider.swapUsed);
+    const freeUsed = Math.min(remainingFree, count);
+    const paidUsed = count - freeUsed;
+    updateRider(riderId, { swapUsed: rider.swapUsed + count });
+    return { freeUsed, paidUsed };
+  },
+
+  consumeUrgentQuota: (riderId) => {
+    const { getRiderById, updateRider } = get();
+    const rider = getRiderById(riderId);
+    if (!rider || rider.urgentCount <= 0) return { usedQuota: false };
+    updateRider(riderId, { urgentCount: rider.urgentCount - 1 });
+    return { usedQuota: true };
   },
 
   getRidersByLevel: () => {

@@ -19,12 +19,31 @@ interface BatteryStore {
   refreshBatches: () => void;
   addBatch: (data: Partial<BatteryBatch>) => BatteryBatch;
   getFIFOBatches: () => BatteryBatch[];
+  getRecommendedBatch: () => BatteryBatch | null;
   getWarningBatches: () => WarningBatch[];
   getLockedBatches: () => BatteryBatch[];
   lockBatch: (batchId: string) => void;
   unlockBatch: (batchId: string) => void;
-  outbounds: (batchId: string, qty: number) => boolean;
+  outbounds: (batchId: string, qty: number) => { success: boolean; message: string };
   createOrder: (order: Partial<RentalOrder>) => RentalOrder;
+  processFIFOSwap: (params: {
+    riderId: string;
+    riderName: string;
+    packageId: string;
+    quantity: number;
+    swapFee: number;
+    urgentFee: number;
+    amount: number;
+    isUrgent: boolean;
+    enforceFIFO?: boolean;
+    requestedBatchId?: string;
+  }) => {
+    success: boolean;
+    message: string;
+    order?: RentalOrder;
+    batch?: BatteryBatch;
+    blocked?: boolean;
+  };
   getDashboardStats: () => {
     totalBatteries: number;
     inStock: number;
@@ -55,17 +74,21 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
   },
 
   addBatch: (data) => {
+    const expiryDate =
+      data.expiryDate || dayjs().add(365, 'day').format('YYYY-MM-DD');
+    const remaining = getRemainingDays(expiryDate);
+    const autoLocked = remaining <= 0;
+    const status: BatteryBatch['status'] = autoLocked ? 'locked' : 'in_stock';
+
     const newBatch: BatteryBatch = {
       batchId: data.batchId || generateBatchId(),
       supplier: data.supplier || '未知供应商',
       quantity: data.quantity || 100,
-      availableQty: data.availableQty || data.quantity || 100,
+      availableQty: autoLocked ? 0 : data.availableQty || data.quantity || 100,
       manufactureDate: data.manufactureDate || dayjs().format('YYYY-MM-DD'),
-      expiryDate: data.expiryDate || dayjs().add(365, 'day').format('YYYY-MM-DD'),
-      remainingDays: getRemainingDays(
-        data.expiryDate || dayjs().add(365, 'day').format('YYYY-MM-DD')
-      ),
-      status: 'in_stock',
+      expiryDate,
+      remainingDays: remaining,
+      status,
       warehouseLocation: data.warehouseLocation || '未分配',
       createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       healthScore: data.healthScore || 100,
@@ -78,14 +101,18 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
   getFIFOBatches: () => {
     const { batches } = get();
     return batches
-      .filter((b) => b.status === 'in_stock' && b.availableQty > 0)
+      .filter((b) => b.status === 'in_stock' && b.availableQty > 0 && b.remainingDays > 0)
       .sort((a, b) => a.remainingDays - b.remainingDays);
+  },
+
+  getRecommendedBatch: () => {
+    return get().getFIFOBatches()[0] || null;
   },
 
   getWarningBatches: () => {
     const { batches } = get();
     return batches
-      .filter((b) => b.status !== 'locked' && b.remainingDays <= 90)
+      .filter((b) => b.status !== 'locked' && b.remainingDays <= 90 && b.remainingDays > 0)
       .map((b) => ({
         batchId: b.batchId,
         level: getExpiryWarningLevel(b.remainingDays),
@@ -121,10 +148,17 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
   },
 
   outbounds: (batchId, qty) => {
+    if (qty <= 0) return { success: false, message: '出库数量必须大于0' };
     const { batches } = get();
     const batch = batches.find((b) => b.batchId === batchId);
-    if (!batch || batch.status === 'locked' || batch.availableQty < qty) {
-      return false;
+    if (!batch) return { success: false, message: '批次不存在' };
+    if (batch.status === 'locked') return { success: false, message: '该批次已锁定，不可出库' };
+    if (batch.remainingDays <= 0) return { success: false, message: '该批次已到期，不可出库' };
+    if (batch.availableQty < qty) {
+      return {
+        success: false,
+        message: `库存不足，可用数量仅 ${batch.availableQty} 块`,
+      };
     }
     set((state) => ({
       batches: state.batches.map((b) =>
@@ -133,7 +167,7 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
           : b
       ),
     }));
-    return true;
+    return { success: true, message: '出库成功' };
   },
 
   createOrder: (order) => {
@@ -143,13 +177,74 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
       riderName: order.riderName || '未知骑手',
       batteryBatchId: order.batteryBatchId || '',
       type: order.type || 'SWAP',
+      quantity: order.quantity || 1,
+      swapFee: order.swapFee || 0,
+      urgentFee: order.urgentFee || 0,
       amount: order.amount || 0,
       createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       status: order.status || 'paid',
       packageId: order.packageId || 'PKG001',
+      isUrgent: order.isUrgent || false,
     };
     set((state) => ({ orders: [newOrder, ...state.orders] }));
     return newOrder;
+  },
+
+  processFIFOSwap: ({
+    riderId,
+    riderName,
+    packageId,
+    quantity,
+    swapFee,
+    urgentFee,
+    amount,
+    isUrgent,
+    enforceFIFO = true,
+    requestedBatchId,
+  }) => {
+    const recommended = get().getRecommendedBatch();
+
+    if (enforceFIFO && requestedBatchId && requestedBatchId !== recommended?.batchId) {
+      return {
+        success: false,
+        blocked: true,
+        message: `出库必须遵循 FIFO 规则，请选择推荐批次「${recommended?.batchId || '暂无可用批次'}」。当前所选批次不是效期最早的。`,
+      };
+    }
+
+    const targetBatch = enforceFIFO ? recommended : get().batches.find((b) => b.batchId === requestedBatchId);
+
+    if (!targetBatch) {
+      return { success: false, message: '暂无可用电池库存' };
+    }
+
+    const outboundResult = get().outbounds(targetBatch.batchId, quantity);
+    if (!outboundResult.success) {
+      return { success: false, message: outboundResult.message };
+    }
+
+    const order = get().createOrder({
+      riderId,
+      riderName,
+      batteryBatchId: targetBatch.batchId,
+      type: 'SWAP',
+      quantity,
+      swapFee,
+      urgentFee,
+      amount,
+      packageId,
+      isUrgent,
+      status: 'paid',
+    });
+
+    const finalBatch = get().batches.find((b) => b.batchId === targetBatch.batchId);
+
+    return {
+      success: true,
+      message: `出库成功：从批次 ${targetBatch.batchId} 出库 ${quantity} 块电池`,
+      order,
+      batch: finalBatch,
+    };
   },
 
   getDashboardStats: () => {
@@ -159,7 +254,7 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
     const totalBatteries = batches.reduce((s, b) => s + b.quantity, 0);
     const inStock = batches.reduce((s, b) => s + b.availableQty, 0);
     const warnings = batches.filter(
-      (b) => b.status !== 'locked' && b.remainingDays <= 90
+      (b) => b.status !== 'locked' && b.remainingDays <= 90 && b.remainingDays > 0
     ).length;
     const locked = batches.filter((b) => b.status === 'locked').length;
     const avgHealth =
@@ -171,7 +266,7 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
       inRent: totalBatteries - inStock,
       warningCount: warnings,
       lockedCount: locked,
-      todaySwap: todayOrders.length,
+      todaySwap: todayOrders.reduce((s, o) => s + o.quantity, 0),
       avgHealthScore: Math.round(avgHealth),
     };
   },
@@ -182,8 +277,9 @@ export const useBatteryStore = create<BatteryStore>((set, get) => ({
     for (let i = 6; i >= 0; i--) {
       const date = dayjs().subtract(i, 'day').format('MM-DD');
       const fullDate = dayjs().subtract(i, 'day').format('YYYY-MM-DD');
-      const count = orders.filter((o) => o.createdAt.startsWith(fullDate)).length;
-      result.push({ date, count: count + Math.floor(Math.random() * 15) + 5 });
+      const dayOrders = orders.filter((o) => o.createdAt.startsWith(fullDate));
+      const qty = dayOrders.reduce((s, o) => s + o.quantity, 0);
+      result.push({ date, count: qty + Math.floor(Math.random() * 10) + 3 });
     }
     return result;
   },

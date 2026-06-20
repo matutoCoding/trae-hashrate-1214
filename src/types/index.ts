@@ -65,10 +65,14 @@ export interface RentalOrder {
   riderName: string;
   batteryBatchId: string;
   type: 'RENT' | 'SWAP';
+  quantity: number;
+  swapFee: number;
+  urgentFee: number;
   amount: number;
   createdAt: string;
   status: 'paid' | 'unpaid' | 'refunded';
   packageId: string;
+  isUrgent: boolean;
 }
 
 export interface WarningBatch {

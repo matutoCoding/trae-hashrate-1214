@@ -265,7 +265,42 @@ export default function BillPage() {
       },
     },
     {
-      title: '金额',
+      title: '数量',
+      dataIndex: 'quantity',
+      key: 'quantity',
+      width: 70,
+      render: (value, record) => (
+        <div className="text-center">
+          <span className="font-semibold text-slate-700">{value || 1}</span>
+          <span className="text-xs text-slate-400 ml-1">块</span>
+          {record.isUrgent && (
+            <Tag color="red" className="!ml-1 !text-xs !py-0 !px-1">加急</Tag>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: '换电费',
+      dataIndex: 'swapFee',
+      key: 'swapFee',
+      width: 90,
+      render: (value) => (
+        <span className="text-slate-600 text-sm">¥{value?.toFixed(2) || '0.00'}</span>
+      ),
+    },
+    {
+      title: '加急费',
+      dataIndex: 'urgentFee',
+      key: 'urgentFee',
+      width: 90,
+      render: (value) => (
+        <span className={value > 0 ? 'text-red-600 text-sm' : 'text-slate-400 text-sm'}>
+          ¥{value?.toFixed(2) || '0.00'}
+        </span>
+      ),
+    },
+    {
+      title: '总金额',
       dataIndex: 'amount',
       key: 'amount',
       width: 100,
@@ -451,7 +486,7 @@ export default function BillPage() {
                 showQuickJumper: true,
                 showTotal: (total) => `共 ${total} 条`,
               }}
-              scroll={{ x: 1400 }}
+              scroll={{ x: 1800 }}
             />
           </Card>
 
@@ -716,13 +751,28 @@ export default function BillPage() {
                 <Tag color={orderTypeMap[detailModal.record.type].color}>
                   {orderTypeMap[detailModal.record.type].text}
                 </Tag>
+                {detailModal.record.isUrgent && (
+                  <Tag color="red" className="!ml-2">加急</Tag>
+                )}
               </Descriptions.Item>
               <Descriptions.Item label="支付状态">
                 <Tag color={paymentStatusMap[detailModal.record.status].color}>
                   {paymentStatusMap[detailModal.record.status].text}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="订单金额">
+              <Descriptions.Item label="出库数量">
+                <span className="font-semibold">{detailModal.record.quantity || 1}</span>
+                <span className="text-slate-400 ml-1">块</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="换电费">
+                <span className="text-slate-600">¥{detailModal.record.swapFee?.toFixed(2) || '0.00'}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="加急费">
+                <span className={detailModal.record.urgentFee > 0 ? 'text-red-600' : 'text-slate-400'}>
+                  ¥{detailModal.record.urgentFee?.toFixed(2) || '0.00'}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="订单总金额">
                 <span className="text-lg font-bold text-primary-700">
                   ¥{detailModal.record.amount.toFixed(2)}
                 </span>

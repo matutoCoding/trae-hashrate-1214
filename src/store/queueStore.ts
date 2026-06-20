@@ -72,6 +72,18 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       packageName,
     };
+
+    let urgentRemark = '';
+    if (queueType === 'URGENT' && rider.riderId) {
+      try {
+        const userStore = require('@/store/userStore').useUserStore;
+        const result = userStore.getState().consumeUrgentQuota(rider.riderId);
+        urgentRemark = result.usedQuota ? '（已扣加急配额）' : '（无加急配额，将收取加急费）';
+      } catch (e) {
+        // ignore
+      }
+    }
+
     set((state) => ({
       tickets: insertTicketWithPriority(state.tickets, newTicket),
       counter: newCounter,
@@ -80,7 +92,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ticketId: newTicket.ticketId,
       action: 'create',
       operator: '系统',
-      remark: `取号成功，类型：${queueType === 'URGENT' ? '加急' : queueType === 'VIP' ? 'VIP' : '普通'}`,
+      remark: `取号成功，类型：${queueType === 'URGENT' ? '加急' : queueType === 'VIP' ? 'VIP' : '普通'}${urgentRemark}`,
     });
     return newTicket;
   },
@@ -183,6 +195,15 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     const ticket = get().tickets.find((t) => t.ticketId === ticketId);
     if (!ticket || ticket.status !== 'waiting') return false;
 
+    if (ticket.queueType !== 'URGENT') {
+      try {
+        const userStore = require('@/store/userStore').useUserStore;
+        userStore.getState().consumeUrgentQuota(ticket.riderId);
+      } catch (e) {
+        // ignore
+      }
+    }
+
     set((state) => ({
       tickets: jumpTicketToFront(state.tickets, ticketId, 'URGENT'),
     }));
@@ -190,20 +211,29 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ticketId,
       action: 'jump',
       operator,
-      remark: '加急插队处理',
+      remark: '加急插队处理，已扣减加急配额',
     });
     return true;
   },
 
   changePriority: (ticketId, newType, operator = '管理员') => {
-    const { addLog } = get();
-    const updated = jumpTicketToFront(get().tickets, ticketId, newType);
+    const { addLog, tickets } = get();
+    const ticket = tickets.find((t) => t.ticketId === ticketId);
+    if (ticket && newType === 'URGENT' && ticket.queueType !== 'URGENT') {
+      try {
+        const userStore = require('@/store/userStore').useUserStore;
+        userStore.getState().consumeUrgentQuota(ticket.riderId);
+      } catch (e) {
+        // ignore
+      }
+    }
+    const updated = jumpTicketToFront(tickets, ticketId, newType);
     set({ tickets: updated });
     addLog({
       ticketId,
       action: 'priority_change',
       operator,
-      remark: `优先级变更为：${newType === 'URGENT' ? '加急' : newType === 'VIP' ? 'VIP' : '普通'}`,
+      remark: `优先级变更为：${newType === 'URGENT' ? '加急（扣加急配额）' : newType === 'VIP' ? 'VIP' : '普通'}`,
     });
   },
 

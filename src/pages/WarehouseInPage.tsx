@@ -17,6 +17,7 @@ import {
   Alert,
   Tag,
   message,
+  Modal,
 } from 'antd';
 import {
   PackagePlus,
@@ -25,6 +26,7 @@ import {
   ArrowLeft,
   ArrowRight,
   FileCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { useBatteryStore } from '@/store/batteryStore';
@@ -62,6 +64,7 @@ export default function WarehouseInPage() {
   const [inspection, setInspection] = useState<string[]>([]);
   const [createdBatch, setCreatedBatch] = useState<BatteryBatch | null>(null);
   const [receiptNo, setReceiptNo] = useState('');
+  const [expiryWarning, setExpiryWarning] = useState<'none' | 'danger' | 'locked'>('none');
 
   useEffect(() => {
     form.setFieldsValue({
@@ -71,6 +74,19 @@ export default function WarehouseInPage() {
     });
   }, [form]);
 
+  const handleFormValuesChange = (_: Partial<FormValues>, allValues: FormValues) => {
+    if (allValues.expiryDate && allValues.expiryDate.isValid()) {
+      const remaining = allValues.expiryDate.diff(dayjs(), 'day');
+      if (remaining <= 0) {
+        setExpiryWarning('locked');
+      } else if (remaining <= 30) {
+        setExpiryWarning('danger');
+      } else {
+        setExpiryWarning('none');
+      }
+    }
+  };
+
   const handleNext = async () => {
     if (current === 0) {
       try {
@@ -78,6 +94,23 @@ export default function WarehouseInPage() {
         if (values.manufactureDate && values.expiryDate) {
           if (values.expiryDate.isBefore(values.manufactureDate)) {
             message.error('到期日期不能早于生产日期');
+            return;
+          }
+          const remaining = values.expiryDate.diff(dayjs(), 'day');
+          if (remaining <= 0) {
+            Modal.confirm({
+              title: '效期已到期',
+              icon: <AlertTriangle className="text-red-500" />,
+              content:
+                '该批次到期日期已到或已过期，入库后将自动进入锁定状态，无法出库或租赁。是否确认入库？',
+              okText: '确认入库（锁定）',
+              cancelText: '取消',
+              okButtonProps: { danger: true },
+              onOk: () => {
+                setFormValues(values);
+                setCurrent(1);
+              },
+            });
             return;
           }
         }
@@ -168,6 +201,7 @@ export default function WarehouseInPage() {
               form={form}
               layout="vertical"
               initialValues={{ batchId: generateBatchId(), healthScore: 100, capacity: 60 }}
+              onValuesChange={handleFormValuesChange}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
                 <Form.Item
@@ -242,6 +276,26 @@ export default function WarehouseInPage() {
                     }
                   />
                 </Form.Item>
+
+                {expiryWarning !== 'none' && (
+                  <div className="mb-5 -mt-2">
+                    <Alert
+                      type={expiryWarning === 'locked' ? 'error' : 'warning'}
+                      showIcon
+                      icon={<AlertTriangle className={expiryWarning === 'locked' ? 'text-red-500' : 'text-orange-500'} />}
+                      message={
+                        expiryWarning === 'locked'
+                          ? '该批次已到期或过期，入库后将自动锁定，不可出库租赁'
+                          : '该批次剩余效期不足30天，属于临期批次，请优先安排出库'
+                      }
+                      description={
+                        expiryWarning === 'locked'
+                          ? '效期≤0天会被系统自动标记为「已锁定」状态，不会出现在可用库存和出库推荐列表中'
+                          : '系统将在临期预警看板中以红色紧急级别提示，请尽快调度使用'
+                      }
+                    />
+                  </div>
+                )}
 
                 <Form.Item
                   name="capacity"
